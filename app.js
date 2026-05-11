@@ -12,51 +12,35 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Proxy logic ───
-function proxyRequest(targetUrl, originalReferer, res) {
+async function proxyRequest(targetUrl, originalReferer, res) {
     const isM3u8 = targetUrl.includes('.m3u8');
     const referer = originalReferer || 'https://google.com';
 
     console.log(`[PROXY] Fetching: ${targetUrl.substring(0, 80)}...`);
 
-    const curlArgs = [
-        '-s', '-L',
-        '--compressed',
-        '--insecure',
-        '--http1.1',
-        '-H', `Referer: ${referer}`,
-        '-H', `User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36`,
-        '-H', 'Accept: */*',
-        '-w', '\n%{http_code}',
-        targetUrl,
-    ];
-
-    const curl = spawn('curl', curlArgs);
-    const chunks = [];
-    curl.stdout.on('data', (chunk) => chunks.push(chunk));
-    
-        curl.on('close', (code) => {
-            const fullOutput = Buffer.concat(chunks);
-            const fullStr = fullOutput.toString('binary');
-            const lastNewline = fullStr.lastIndexOf('\n');
-            const statusCode = parseInt(fullStr.substring(lastNewline + 1).trim(), 10) || 200;
-            const bodyBuffer = fullOutput.slice(0, lastNewline >= 0 ? lastNewline : fullOutput.length);
-
-            console.log(`[PROXY] Status: ${statusCode} for ${targetUrl.substring(0, 50)}...`);
-
-            if (statusCode === 403 || statusCode === 401) {
-                console.log(`❌ Proxy Denied (403/401)`);
-                res.status(403).end('Access Denied by upstream');
-                return;
+    try {
+        const response = await fetch(targetUrl, {
+            headers: {
+                'Referer': referer,
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': '*/*'
             }
+        });
 
-            if (code !== 0) {
-                console.log(`❌ Proxy Curl Error Code: ${code}`);
-                res.status(500).end('Internal Proxy Error');
-                return;
-            }
+        const statusCode = response.status;
+        const contentType = response.headers.get('content-type');
+        console.log(`[PROXY] Status: ${statusCode} for ${targetUrl.substring(0, 50)}...`);
+
+        if (!response.ok) {
+            console.log(`❌ Proxy Failed: ${statusCode}`);
+            res.status(statusCode).send('Error from upstream');
+            return;
+        }
+
+        const bodyBuffer = await response.arrayBuffer();
 
         if (isM3u8) {
-            const body = bodyBuffer.toString('utf-8');
+            const body = Buffer.from(bodyBuffer).toString('utf-8');
             const baseUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
             const rewritten = body.split('\n').map(line => {
                 line = line.trim();
@@ -72,12 +56,15 @@ function proxyRequest(targetUrl, originalReferer, res) {
             res.set('Expires', '0');
             res.status(200).send(rewritten);
         } else {
-            res.set('Content-Type', 'video/mp2t');
+            res.set('Content-Type', contentType || 'video/mp2t');
             res.set('Access-Control-Allow-Origin', '*');
-            res.set('Cache-Control', 'public, max-age=3600'); // TS segments can be cached
-            res.status(statusCode).send(bodyBuffer);
+            res.set('Cache-Control', 'public, max-age=3600');
+            res.status(200).send(Buffer.from(bodyBuffer));
         }
-    });
+    } catch (error) {
+        console.error(`❌ Proxy Fetch Error:`, error.message);
+        res.status(500).send('Proxy Connection Error');
+    }
 }
 
 // ─── Endpoints ───
