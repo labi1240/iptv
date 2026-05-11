@@ -20,6 +20,7 @@ function proxyRequest(targetUrl, originalReferer, res) {
 
     const curlArgs = [
         '-s', '-L',
+        '--http1.1',
         '-H', `Referer: ${referer}`,
         '-H', `User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36`,
         '-H', 'Accept: */*',
@@ -31,17 +32,26 @@ function proxyRequest(targetUrl, originalReferer, res) {
     const chunks = [];
     curl.stdout.on('data', (chunk) => chunks.push(chunk));
     
-    curl.on('close', () => {
-        const fullOutput = Buffer.concat(chunks);
-        const fullStr = fullOutput.toString('binary');
-        const lastNewline = fullStr.lastIndexOf('\n');
-        const statusCode = parseInt(fullStr.substring(lastNewline + 1).trim(), 10) || 200;
-        const bodyBuffer = fullOutput.slice(0, lastNewline >= 0 ? lastNewline : fullOutput.length);
+        curl.on('close', (code) => {
+            const fullOutput = Buffer.concat(chunks);
+            const fullStr = fullOutput.toString('binary');
+            const lastNewline = fullStr.lastIndexOf('\n');
+            const statusCode = parseInt(fullStr.substring(lastNewline + 1).trim(), 10) || 200;
+            const bodyBuffer = fullOutput.slice(0, lastNewline >= 0 ? lastNewline : fullOutput.length);
 
-        if (statusCode === 403 || statusCode === 401) {
-            res.status(403).end('Access Denied by upstream');
-            return;
-        }
+            console.log(`[PROXY] Status: ${statusCode} for ${targetUrl.substring(0, 50)}...`);
+
+            if (statusCode === 403 || statusCode === 401) {
+                console.log(`❌ Proxy Denied (403/401)`);
+                res.status(403).end('Access Denied by upstream');
+                return;
+            }
+
+            if (code !== 0) {
+                console.log(`❌ Proxy Curl Error Code: ${code}`);
+                res.status(500).end('Internal Proxy Error');
+                return;
+            }
 
         if (isM3u8) {
             const body = bodyBuffer.toString('utf-8');
