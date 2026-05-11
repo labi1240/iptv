@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StreamFinder — Universal Extractor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --bg: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --border: rgba(255, 255, 255, 0.1);
+            --text: #f8fafc;
+            --text-dim: #94a3b8;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(168, 85, 247, 0.15) 0px, transparent 50%);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 900px;
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 3rem;
+            font-weight: 800;
+            letter-spacing: -0.025em;
+            background: linear-gradient(to right, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+
+        p.subtitle {
+            color: var(--text-dim);
+            font-size: 1.1rem;
+        }
+
+        /* Player Section */
+        .player-container {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+            border-radius: 20px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            margin-bottom: 30px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            display: none;
+            position: relative;
+        }
+
+        .player-container.active {
+            display: block;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .search-box {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            padding: 8px;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            display: flex;
+            gap: 8px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+            margin-bottom: 40px;
+            transition: all 0.3s ease;
+        }
+
+        .search-box:focus-within {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.2);
+        }
+
+        input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: white;
+            padding: 12px 20px;
+            font-size: 1.1rem;
+        }
+
+        input::placeholder {
+            color: #64748b;
+        }
+
+        button.extract-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px 32px;
+            border-radius: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        button.extract-btn:hover {
+            background: var(--primary-hover);
+            transform: scale(1.02);
+        }
+
+        .results-section {
+            display: none;
+        }
+
+        .results-section.active {
+            display: block;
+        }
+
+        .section-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: var(--text-dim);
+        }
+
+        .stream-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 16px;
+            transition: all 0.3s;
+        }
+
+        .stream-card:hover {
+            border-color: var(--primary);
+            background: rgba(30, 41, 59, 0.9);
+        }
+
+        .stream-type {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            font-weight: 800;
+            color: var(--primary);
+            background: rgba(99, 102, 241, 0.1);
+            padding: 2px 8px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            display: inline-block;
+        }
+
+        .stream-url {
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            margin-bottom: 15px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .card-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .action-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 10px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .action-btn.play {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .action-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .loader {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-left-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>StreamFinder</h1>
+            <p class="subtitle">Extract and play m3u8 streams instantly.</p>
+        </header>
+
+        <div class="player-container" id="playerContainer">
+            <video id="video" controls></video>
+        </div>
+
+        <div class="search-box">
+            <input type="text" id="targetUrl" placeholder="Paste webpage URL here..." />
+            <button class="extract-btn" id="extractBtn">
+                <span id="btnText">Extract</span>
+            </button>
+        </div>
+
+        <div class="loader" id="loader">
+            <div class="spinner"></div>
+            <p style="color: var(--text-dim); font-size: 0.9rem;">Launching browser & sniffing traffic...</p>
+        </div>
+
+        <div class="results-section active" id="quickLinks">
+            <div class="section-title">Live Streams (Auto-Refreshing)</div>
+            <div id="quickList">
+                <div class="stream-card">
+                    <span class="stream-type">LIVE: STAR SPORTS</span>
+                    <div class="stream-url">dadocric.st/player.php?id=starsp</div>
+                    <div class="card-actions">
+                        <button class="action-btn play" onclick="extractAndPlay('https://dadocric.st/player.php?id=starsp&v=m')">Play Fresh Stream</button>
+                    </div>
+                </div>
+                <div class="stream-card">
+                    <span class="stream-type">LIVE: PUNJAB VS DELHI</span>
+                    <div class="stream-url">streamed.pk/watch/punjab-vs-delhi</div>
+                    <div class="card-actions">
+                        <button class="action-btn play" onclick="extractAndPlay('https://streamed.pk/watch/punjab-kings-vs-delhi-capitals-2464280/admin/1')">Play Fresh Stream</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="results-section" id="resultsSection">
+            <div class="section-title">Detected Streams</div>
+            <div id="streamsList"></div>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const playerContainer = document.getElementById('playerContainer');
+        const targetUrlInput = document.getElementById('targetUrl');
+        const extractBtn = document.getElementById('extractBtn');
+        const loader = document.getElementById('loader');
+        const resultsSection = document.getElementById('resultsSection');
+        const streamsList = document.getElementById('streamsList');
+        let hls = null;
+
+        async function extractAndPlay(sourceUrl) {
+            targetUrlInput.value = sourceUrl;
+            extractBtn.click();
+        }
+
+        extractBtn.addEventListener('click', async () => {
+            const url = targetUrlInput.value.trim();
+            if (!url) return;
+
+            loader.style.display = 'flex';
+            resultsSection.classList.remove('active');
+            extractBtn.disabled = true;
+            streamsList.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/extract', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+                const data = await response.json();
+                
+                loader.style.display = 'none';
+                extractBtn.disabled = false;
+
+                if (data.streams && data.streams.length > 0) {
+                    resultsSection.classList.add('active');
+                    data.streams.forEach(stream => {
+                        const card = createStreamCard(stream);
+                        streamsList.appendChild(card);
+                    });
+                    // Auto-play the first one
+                    playStream(data.streams[0].url, data.streams[0].referer);
+                } else {
+                    alert('No streams found. Try a direct embed URL or wait for the live to start.');
+                }
+            } catch (error) {
+                console.error(error);
+                loader.style.display = 'none';
+                extractBtn.disabled = false;
+                alert('Extraction error. Check server logs.');
+            }
+        });
+
+        function playStream(url, referer) {
+            playerContainer.classList.add('active');
+            const proxiedUrl = `/proxy?url=${encodeURIComponent(url)}&referer=${encodeURIComponent(referer)}`;
+
+            if (hls) hls.destroy();
+
+            if (Hls.isSupported()) {
+                hls = new Hls();
+                hls.loadSource(proxiedUrl);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = proxiedUrl;
+                video.addEventListener('loadedmetadata', () => video.play());
+            }
+        }
+
+        function createStreamCard(stream) {
+            const div = document.createElement('div');
+            div.className = 'stream-card';
+            div.innerHTML = `
+                <span class="stream-type">${stream.type}</span>
+                <div class="stream-url">${stream.url}</div>
+                <div class="card-actions">
+                    <button class="action-btn play" onclick="playStream('${stream.url}', '${stream.referer}')">Play Stream</button>
+                    <button class="action-btn" onclick="navigator.clipboard.writeText('${stream.url}')">Copy URL</button>
+                </div>
+            `;
+            return div;
+        }
+    </script>
+</body>
+</html>
